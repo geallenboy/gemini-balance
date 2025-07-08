@@ -1,57 +1,39 @@
 volumes:
   mysql_data:
-
 services:
   gemini-balance:
     image: ghcr.io/snailyp/gemini-balance:latest
     container_name: gemini-balance
     restart: unless-stopped
-
-    # 读取环境变量
+    ports:
+      - "8001:8001"
     env_file:
       - .env
-
     depends_on:
       mysql:
         condition: service_healthy
-
     healthcheck:
-      test: >
-        CMD-SHELL python - <<'PY'
-        import requests, sys
-        try:
-            r = requests.get('http://localhost:9001/health', timeout=2)
-            sys.exit(0) if r.status_code == 200 else sys.exit(1)
-        except Exception:
-            sys.exit(1)
-        PY
+      test: ["CMD-SHELL", "python -c \"import requests; exit(0) if requests.get('http://localhost:8000/health').status_code == 200 else exit(1)\""]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-    # ⬇️ 把流量接给 Traefik，而不是宿主端口映射
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.gemini.rule=Host(`geminibalance.ailinksall.com`)
-      - traefik.http.routers.gemini.entrypoints=websecure          # 443
-      - traefik.http.routers.gemini.tls=true
-      - traefik.http.services.gemini.loadbalancer.server.port=9001
-
   mysql:
     image: mysql:8
     container_name: gemini-balance-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: your_root_password      # 建议改为强密码
+      MYSQL_ROOT_PASSWORD: your_root_password
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # ports:
+    #   - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      interval: 10s # 每隔10秒检查一次
+      timeout: 5s   # 每次检查的超时时间为5秒
+      retries: 3    # 重试3次失败后标记为 unhealthy
+      start_period: 30s # 容器启动后等待30秒再开始第一次健康检查
